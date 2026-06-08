@@ -33,14 +33,14 @@ python yadisk_download.py <ссылка> C:\MyFiles
 ### Пример
 
 ```
-> python yadisk_download.py https://disk.yandex.ru/d/bQwbSFp7Ro4fQQ D:\Загрузки
+> python yadisk_download.py https://disk.yandex.ru/d/XXXXXXXXXXX D:\Загрузки
 
 Получаю список файлов...
 Найдено файлов: 295, общий размер: 1842.3 МБ
 
-[1/295] Фотопозы/01.jpg
+[1/295] Фото/01.jpg
   100% (2.1 MB)
-[2/295] Фотопозы/02.jpg
+[2/295] Фото/02.jpg
   пропускаю (уже скачан)
 ...
 Готово! Файлы сохранены в: D:\Загрузки
