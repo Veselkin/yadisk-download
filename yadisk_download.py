@@ -10,8 +10,27 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
+import socket
+import time
 
 API = "https://cloud-api.yandex.net/v1/disk/public/resources"
+
+
+def fetch_with_retry(url, timeout=30, retries=5, backoff=3):
+    """Выполняет GET-запрос с повторными попытками при сетевых сбоях/таймаутах."""
+    last_err = None
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as e:
+            last_err = e
+            wait = backoff * attempt
+            print(f"  сетевая ошибка ({e}), повтор {attempt}/{retries} через {wait}с...")
+            time.sleep(wait)
+    raise last_err
+
 
 def get_items(public_key, path="/", offset=0, limit=100):
     params = urllib.parse.urlencode({
@@ -23,31 +42,40 @@ def get_items(public_key, path="/", offset=0, limit=100):
                   "_embedded.items.file,_embedded.items.size,_embedded.total"
     })
     url = f"{API}?{params}"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    return json.loads(fetch_with_retry(url, timeout=30))
+
 
 def get_download_url(public_key, path):
     params = urllib.parse.urlencode({"public_key": public_key, "path": path})
     url = f"{API}/download?{params}"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())["href"]
+    return json.loads(fetch_with_retry(url, timeout=30))["href"]
+
 
 def download_file(url, dest_path):
     os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=60) as r, open(dest_path, "wb") as f:
-        total = int(r.headers.get("Content-Length", 0))
-        downloaded = 0
-        while chunk := r.read(1024 * 256):
-            f.write(chunk)
-            downloaded += len(chunk)
-            if total:
-                pct = downloaded * 100 // total
-                mb = downloaded / 1024 / 1024
-                print(f"\r  {pct}% ({mb:.1f} MB)", end="", flush=True)
-    print()
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=60) as r, open(dest_path, "wb") as f:
+                total = int(r.headers.get("Content-Length", 0))
+                downloaded = 0
+                while chunk := r.read(1024 * 256):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        pct = downloaded * 100 // total
+                        mb = downloaded / 1024 / 1024
+                        print(f"\r  {pct}% ({mb:.1f} MB)", end="", flush=True)
+            print()
+            return
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as e:
+            last_err = e
+            wait = 3 * attempt
+            print(f"\n  сетевая ошибка при скачивании ({e}), повтор {attempt}/3 через {wait}с...")
+            time.sleep(wait)
+    raise last_err
+
 
 def list_all(public_key, path="/"):
     """Рекурсивно получить все файлы."""
@@ -68,6 +96,7 @@ def list_all(public_key, path="/"):
         if offset >= total:
             break
     return files
+
 
 def main():
     if len(sys.argv) < 2:
@@ -116,6 +145,7 @@ def main():
             print(f"  ОШИБКА: {e}")
 
     print(f"\nГотово! Файлы сохранены в: {os.path.abspath(dest_dir)}")
+
 
 if __name__ == "__main__":
     main()
